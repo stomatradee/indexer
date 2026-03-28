@@ -188,6 +188,31 @@ export const LendingPoolAbi = [
           name: "amount",
           type: "uint256",
         },
+      ],
+      name: "CollectorFundsClaimed",
+      type: "event",
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "projectId",
+          type: "uint256",
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "collector",
+          type: "address",
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256",
+        },
         {
           indexed: false,
           internalType: "uint256",
@@ -233,6 +258,31 @@ export const LendingPoolAbi = [
       anonymous: false,
       inputs: [
         {
+          indexed: true,
+          internalType: "uint256",
+          name: "projectId",
+          type: "uint256",
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "investor",
+          type: "address",
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256",
+        },
+      ],
+      name: "InvestorFundsClaimed",
+      type: "event",
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
           indexed: false,
           internalType: "address",
           name: "account",
@@ -267,7 +317,7 @@ export const LendingPoolAbi = [
         {
           indexed: false,
           internalType: "uint256",
-          name: "totalInvestorReturn",
+          name: "investorFunds",
           type: "uint256",
         },
         {
@@ -279,7 +329,7 @@ export const LendingPoolAbi = [
         {
           indexed: false,
           internalType: "uint256",
-          name: "collectorRemainder",
+          name: "collectorFunds",
           type: "uint256",
         },
       ],
@@ -354,56 +404,6 @@ export const LendingPoolAbi = [
         },
       ],
       name: "ProjectManuallyClosed",
-      type: "event",
-    },
-    {
-      anonymous: false,
-      inputs: [
-        {
-          indexed: true,
-          internalType: "uint256",
-          name: "projectId",
-          type: "uint256",
-        },
-        {
-          indexed: true,
-          internalType: "address",
-          name: "collector",
-          type: "address",
-        },
-        {
-          indexed: false,
-          internalType: "uint256",
-          name: "amount",
-          type: "uint256",
-        },
-      ],
-      name: "RemainderClaimed",
-      type: "event",
-    },
-    {
-      anonymous: false,
-      inputs: [
-        {
-          indexed: true,
-          internalType: "uint256",
-          name: "projectId",
-          type: "uint256",
-        },
-        {
-          indexed: true,
-          internalType: "address",
-          name: "investor",
-          type: "address",
-        },
-        {
-          indexed: false,
-          internalType: "uint256",
-          name: "amount",
-          type: "uint256",
-        },
-      ],
-      name: "ReturnClaimed",
       type: "event",
     },
     {
@@ -554,14 +554,14 @@ export const LendingPoolAbi = [
     },
     {
       inputs: [{ internalType: "uint256", name: "projectId", type: "uint256" }],
-      name: "claimRemainder",
+      name: "claimCollectorFunds",
       outputs: [],
       stateMutability: "nonpayable",
       type: "function",
     },
     {
       inputs: [{ internalType: "uint256", name: "projectId", type: "uint256" }],
-      name: "claimReturn",
+      name: "claimInvestorFunds",
       outputs: [],
       stateMutability: "nonpayable",
       type: "function",
@@ -586,15 +586,11 @@ export const LendingPoolAbi = [
       outputs: [
         {
           components: [
-            {
-              internalType: "uint256",
-              name: "totalInvestorReturn",
-              type: "uint256",
-            },
+            { internalType: "uint256", name: "investorFunds", type: "uint256" },
             { internalType: "uint256", name: "platformFee", type: "uint256" },
             {
               internalType: "uint256",
-              name: "collectorRemainder",
+              name: "collectorFunds",
               type: "uint256",
             },
             {
@@ -602,8 +598,8 @@ export const LendingPoolAbi = [
               name: "claimedInvestorCount",
               type: "uint256",
             },
-            { internalType: "bool", name: "distributed", type: "bool" },
-            { internalType: "bool", name: "collectorClaimed", type: "bool" },
+            { internalType: "bool", name: "finalized", type: "bool" },
+            { internalType: "bool", name: "collectorWithdrawn", type: "bool" },
           ],
           internalType: "struct DataTypes.Distribution",
           name: "",
