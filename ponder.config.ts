@@ -8,9 +8,13 @@ import { LendingPoolAbi } from "./abis/LendingPoolAbi";
 import { MockUSDCAbi } from "./abis/MockUSDCAbi";
 import { MockUSDTAbi } from "./abis/MockUSDTAbi";
 
-const startBlock = Number(process.env.PONDER_START_BLOCK ?? 252565104);
+const startBlock = Number(process.env.PONDER_START_BLOCK ?? 256563231);
 
 export default createConfig({
+  database: {
+    kind: "postgres",
+    connectionString: process.env.DATABASE_URL,
+  },
   chains: {
     arbitrumSepolia: {
       id: 421614,
@@ -18,8 +22,8 @@ export default createConfig({
         http(process.env.PONDER_RPC_URL_ALCHEMY_421614),
         http(process.env.PONDER_RPC_URL_INFURA_421614),
       ]),
-      maxRequestsPerSecond: 2,
-      ethGetLogsBlockRange: 10,
+      maxRequestsPerSecond: 50,
+      pollingInterval: 5_000,
     },
   },
   contracts: {
