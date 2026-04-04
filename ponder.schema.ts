@@ -64,6 +64,9 @@ export const account = onchainTable(
     completedProjectCount: t.integer().notNull().default(0),
     isBlacklisted: t.boolean().notNull().default(false),
     lastActiveAt: t.integer().notNull(),
+    profileURI: t.text(),
+    profileName: t.text(),
+    profileLocation: t.text(),
   }),
   (table) => ({
     roleIdx: index().on(table.role),
@@ -86,6 +89,46 @@ export const transfer = onchainTable(
     fromIdx: index().on(table.from),
     toIdx: index().on(table.to),
     tokenIdx: index().on(table.token),
+  }),
+);
+
+export const portfolioSnapshot = onchainTable(
+  "portfolio_snapshot",
+  (t) => ({
+    id: t.text().primaryKey(),
+    address: t.hex().notNull(),
+    totalInvested: t.bigint().notNull(),
+    totalClaimed: t.bigint().notNull(),
+    activeInvestments: t.integer().notNull(),
+    netValue: t.bigint().notNull(),
+    timestamp: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+  }),
+  (table) => ({
+    addressIdx: index().on(table.address),
+    timestampIdx: index().on(table.timestamp),
+  }),
+);
+
+export const activityFeed = onchainTable(
+  "activity_feed",
+  (t) => ({
+    id: t.text().primaryKey(),
+    address: t.hex().notNull(),
+    type: t.text().notNull(),
+    projectId: t.bigint(),
+    amount: t.bigint(),
+    token: t.hex(),
+    description: t.text().notNull(),
+    timestamp: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    transactionHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    addressIdx: index().on(table.address),
+    typeIdx: index().on(table.type),
+    timestampIdx: index().on(table.timestamp),
+    projectIdIdx: index().on(table.projectId),
   }),
 );
 

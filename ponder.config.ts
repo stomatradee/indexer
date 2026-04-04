@@ -1,6 +1,5 @@
 import { createConfig } from "ponder";
-// Ambil http dari viem dan loadBalance dari @ponder/utils
-import { http, fallback } from "viem"; 
+import { http, fallback } from "viem";
 
 import { AccessRegistryAbi } from "./abis/AccessRegistryAbi";
 import { ProjectNFTAbi } from "./abis/ProjectNFTAbi";
@@ -15,14 +14,12 @@ export default createConfig({
   chains: {
     arbitrumSepolia: {
       id: 421614,
-      // Menggunakan loadBalance agar beban terbagi rata antara Infura dan Alchemy
       rpc: fallback([
         http(process.env.PONDER_RPC_URL_ALCHEMY_421614),
         http(process.env.PONDER_RPC_URL_INFURA_421614),
       ]),
-      // Pengaturan tambahan untuk menjaga stabilitas di akun gratis
-      maxRequestsPerSecond: 2,     // Rem kecepatan agar tidak diblokir
-      ethGetLogsBlockRange: 10,   // Sesuai saran Alchemy untuk akun gratis
+      maxRequestsPerSecond: 2,
+      ethGetLogsBlockRange: 10,
     },
   },
   contracts: {
