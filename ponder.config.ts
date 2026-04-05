@@ -8,7 +8,7 @@ import { LendingPoolAbi } from "./abis/LendingPoolAbi";
 import { MockUSDCAbi } from "./abis/MockUSDCAbi";
 import { MockUSDTAbi } from "./abis/MockUSDTAbi";
 
-const startBlock = Number(process.env.PONDER_START_BLOCK ?? 256563231);
+const startBlock = Number(process.env.PONDER_START_BLOCK ?? 256736985);
 
 export default createConfig({
   database: {
@@ -20,7 +20,9 @@ export default createConfig({
       id: 421614,
       rpc: fallback([
         http(process.env.PONDER_RPC_URL_ALCHEMY_421614),
-        http(process.env.PONDER_RPC_URL_INFURA_421614),
+        http("https://api.zan.top/arb-sepolia"),
+        http("https://arbitrum-sepolia.drpc.org"),
+        http("https://sepolia-rollup.arbitrum.io/rpc"),
       ]),
       maxRequestsPerSecond: 50,
       pollingInterval: 5_000,

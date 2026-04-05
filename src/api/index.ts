@@ -40,6 +40,9 @@ const COMMODITY_CATEGORY: Record<string, string> = {
   agave: "Spirits",
 };
 
+type ProjectRow = typeof project.$inferSelect;
+type InvestmentRow = typeof investment.$inferSelect;
+
 function toUSD(amount: bigint): number {
   return Number(amount) / 10 ** TOKEN_DECIMALS;
 }
@@ -94,7 +97,7 @@ app.get("/api/projects/open", async (c) => {
     .orderBy(desc(project.createdAt))
     .limit(50);
 
-  const projects = rows.map((p) => ({
+  const projects = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
     commodityType: p.commodityType,
@@ -142,7 +145,7 @@ app.get("/api/projects/browse", async (c) => {
   ]);
   const cnt = countRows[0]?.cnt ?? 0;
 
-  const projects = rows.map((p) => ({
+  const projects = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
     commodityType: p.commodityType,
@@ -172,7 +175,7 @@ app.get("/api/projects/:id/investors", async (c) => {
 
   const p = projectData[0];
 
-  const investors = rows.map((inv) => ({
+  const investors = rows.map((inv: InvestmentRow) => ({
     investor: inv.investor,
     amount: inv.amount.toString(),
     amountUSD: toUSD(inv.amount),
@@ -352,10 +355,10 @@ app.get("/api/account/:address", async (c) => {
           sql`, `,
         )}])`,
       );
-    pRows.forEach((p) => projectDetails.set(p.id, p));
+    pRows.forEach((p: ProjectRow) => projectDetails.set(p.id, p));
   }
 
-  const enrichedInvestments = investorInvestments.map((inv) => {
+  const enrichedInvestments = investorInvestments.map((inv: InvestmentRow) => {
     const pd = projectDetails.get(inv.projectId);
     return {
       id: inv.id,
@@ -378,7 +381,7 @@ app.get("/api/account/:address", async (c) => {
     };
   });
 
-  const enrichedProjects = collectorProjects.map((p) => ({
+  const enrichedProjects = collectorProjects.map((p: ProjectRow) => ({
     id: p.id.toString(),
     commodityType: p.commodityType,
     status: p.status,
@@ -487,14 +490,14 @@ app.get("/api/portfolio/:address", async (c) => {
     (acc, inv) => acc + inv.claimedAmount,
     0n,
   );
-  const activeCount = investments.filter((inv) => !inv.claimed).length;
+  const activeCount = investments.filter((inv: InvestmentRow) => !inv.claimed).length;
   const totalEarningsUSD = toUSD(totalClaimed) - toUSD(totalInvested);
   const earningsPercent =
     totalInvested > 0n
       ? Math.round((totalEarningsUSD / toUSD(totalInvested)) * 1000) / 10
       : 0;
 
-  const enrichedInvestments = investments.map((inv) => {
+  const enrichedInvestments = investments.map((inv: InvestmentRow) => {
     const pd = projectMap.get(inv.projectId);
     const calc = pd ? projectCalc(pd) : null;
     return {
@@ -640,7 +643,7 @@ app.get("/api/collector/:address", async (c) => {
     openProjects.length > 0
       ? Math.round(
           openProjects.reduce(
-            (acc, p) => acc + calcPercentage(p.totalFunded, p.maxFunding),
+            (acc, p: ProjectRow) => acc + calcPercentage(p.totalFunded, p.maxFunding),
             0,
           ) /
             openProjects.length *
@@ -648,7 +651,7 @@ app.get("/api/collector/:address", async (c) => {
         ) / 10
       : 0;
 
-  const enrichedProjects = collectorProjects.map((p) => ({
+  const enrichedProjects = collectorProjects.map((p: ProjectRow) => ({
     id: p.id.toString(),
     commodityType: p.commodityType,
     status: p.status,
