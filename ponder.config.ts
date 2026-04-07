@@ -25,6 +25,7 @@ export default createConfig({
         http("https://sepolia-rollup.arbitrum.io/rpc"),
       ]),
       maxRequestsPerSecond: 50,
+      ethGetLogsBlockRange: 100,
       pollingInterval: 5_000,
     },
   },
