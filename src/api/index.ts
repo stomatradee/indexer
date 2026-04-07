@@ -43,6 +43,28 @@ const COMMODITY_CATEGORY: Record<string, string> = {
 type ProjectRow = typeof project.$inferSelect;
 type InvestmentRow = typeof investment.$inferSelect;
 
+async function fetchMetadata(uri: string): Promise<Record<string, unknown> | null> {
+  if (!uri) return null;
+  try {
+    const res = await fetch(uri, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    return await res.json() as Record<string, unknown>;
+  } catch (e) {
+    console.error("[fetchMetadata] failed:", uri, e);
+    return null;
+  }
+}
+
+async function enrichWithMetadata<T extends { metadataURI: string }>(
+  items: T[],
+): Promise<(Omit<T, "metadataURI"> & { metadata: Record<string, unknown> | null })[]> {
+  const metas = await Promise.all(items.map((item) => fetchMetadata(item.metadataURI)));
+  return items.map((item, i) => {
+    const { metadataURI: _, ...rest } = item;
+    return { ...rest, metadata: metas[i] ?? null };
+  });
+}
+
 function toUSD(amount: bigint): number {
   return Number(amount) / 10 ** TOKEN_DECIMALS;
 }
@@ -97,7 +119,7 @@ app.get("/api/projects/open", async (c) => {
     .orderBy(desc(project.createdAt))
     .limit(50);
 
-  const projects = rows.map((p: ProjectRow) => ({
+  const raw = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
     commodityType: p.commodityType,
@@ -111,6 +133,7 @@ app.get("/api/projects/open", async (c) => {
     createdAt: p.createdAt,
     ...projectCalc(p),
   }));
+  const projects = await enrichWithMetadata(raw);
 
   return c.json({ projects });
 });
@@ -145,7 +168,7 @@ app.get("/api/projects/browse", async (c) => {
   ]);
   const cnt = countRows[0]?.cnt ?? 0;
 
-  const projects = rows.map((p: ProjectRow) => ({
+  const raw = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
     commodityType: p.commodityType,
@@ -156,6 +179,7 @@ app.get("/api/projects/browse", async (c) => {
     createdAt: p.createdAt,
     ...projectCalc(p),
   }));
+  const projects = await enrichWithMetadata(raw);
 
   return c.json({ projects, total: cnt, limit, offset });
 });
@@ -275,6 +299,7 @@ app.get("/api/projects/:id", async (c) => {
       fundingDeadline: projectData.fundingDeadline.toString(),
       repaymentDeadline: projectData.repaymentDeadline.toString(),
       metadataURI: projectData.metadataURI,
+      metadata: await fetchMetadata(projectData.metadataURI),
       status: projectData.status,
       statusLabel: formatStatus(projectData.status),
       totalFunded: projectData.totalFunded.toString(),
@@ -298,6 +323,7 @@ app.get("/api/projects/:id", async (c) => {
           completedProjectCount: col.completedProjectCount,
           isBlacklisted: col.isBlacklisted,
           profileURI: col.profileURI ?? null,
+          profileMetadata: col.profileURI ? await fetchMetadata(col.profileURI) : null,
         }
       : null,
   });
@@ -381,16 +407,18 @@ app.get("/api/account/:address", async (c) => {
     };
   });
 
-  const enrichedProjects = collectorProjects.map((p: ProjectRow) => ({
-    id: p.id.toString(),
-    commodityType: p.commodityType,
-    status: p.status,
-    statusLabel: formatStatus(p.status),
-    metadataURI: p.metadataURI,
-    investorCount: p.investorCount,
-    createdAt: p.createdAt,
-    ...projectCalc(p),
-  }));
+  const enrichedProjects = await enrichWithMetadata(
+    collectorProjects.map((p: ProjectRow) => ({
+      id: p.id.toString(),
+      commodityType: p.commodityType,
+      status: p.status,
+      statusLabel: formatStatus(p.status),
+      metadataURI: p.metadataURI,
+      investorCount: p.investorCount,
+      createdAt: p.createdAt,
+      ...projectCalc(p),
+    }))
+  );
 
   return c.json({
     account: {
@@ -409,6 +437,7 @@ app.get("/api/account/:address", async (c) => {
       isBlacklisted: accountData.isBlacklisted,
       lastActiveAt: accountData.lastActiveAt,
       profileURI: accountData.profileURI ?? null,
+      profileMetadata: accountData.profileURI ? await fetchMetadata(accountData.profileURI) : null,
       profileName: accountData.profileName ?? null,
       profileLocation: accountData.profileLocation ?? null,
     },
@@ -651,22 +680,25 @@ app.get("/api/collector/:address", async (c) => {
         ) / 10
       : 0;
 
-  const enrichedProjects = collectorProjects.map((p: ProjectRow) => ({
-    id: p.id.toString(),
-    commodityType: p.commodityType,
-    status: p.status,
-    statusLabel: formatStatus(p.status),
-    metadataURI: p.metadataURI,
-    investorCount: p.investorCount,
-    createdAt: p.createdAt,
-    ...projectCalc(p),
-  }));
+  const enrichedProjects = await enrichWithMetadata(
+    collectorProjects.map((p: ProjectRow) => ({
+      id: p.id.toString(),
+      commodityType: p.commodityType,
+      status: p.status,
+      statusLabel: formatStatus(p.status),
+      metadataURI: p.metadataURI,
+      investorCount: p.investorCount,
+      createdAt: p.createdAt,
+      ...projectCalc(p),
+    }))
+  );
 
   return c.json({
     collector: {
       address: accountData.address,
       role: accountData.role,
       profileURI: accountData.profileURI ?? null,
+      profileMetadata: accountData.profileURI ? await fetchMetadata(accountData.profileURI) : null,
       projectCount: accountData.projectCount,
       completedProjectCount: accountData.completedProjectCount,
       isBlacklisted: accountData.isBlacklisted,
