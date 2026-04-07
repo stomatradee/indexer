@@ -243,13 +243,20 @@ ponder.on("ProjectNFT:ProjectMinted", async ({ event, context }) => {
 
 ponder.on("ProjectNFT:ProjectVerified", async ({ event, context }) => {
   const { db } = context;
+  const timestamp = Number(event.block.timestamp);
   const { projectId } = event.args;
 
   const existing = await db.find(project, { id: projectId });
   if (existing) {
     await db
       .update(project, { id: projectId })
-      .set({ collateralVerified: true });
+      .set({ collateralVerified: true, status: 1 });
+
+    const stats = await upsertPlatformStats(db, timestamp);
+    await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
+      activeProjects: (stats?.activeProjects ?? 0) + 1,
+      updatedAt: timestamp,
+    });
   }
 });
 
