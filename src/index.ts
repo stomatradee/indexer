@@ -740,6 +740,42 @@ ponder.on("LendingPool:ProjectCompleted", async ({ event, context }) => {
   }
 });
 
+ponder.on("Treasury:Deposited", async ({ event, context }) => {
+  const timestamp = Number(event.block.timestamp);
+  const { projectId, token, from, amount } = event.args;
+
+  await recordActivity(context, {
+    address: from,
+    type: "treasury_deposit",
+    projectId,
+    amount,
+    token,
+    description: `Treasury deposit for Project #${projectId}: ${formatAmount(amount)}`,
+    timestamp,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+  });
+});
+
+ponder.on("Treasury:Released", async ({ event, context }) => {
+  const timestamp = Number(event.block.timestamp);
+  const { projectId, token, to, amount } = event.args;
+
+  await recordActivity(context, {
+    address: to,
+    type: "treasury_release",
+    projectId,
+    amount,
+    token,
+    description: `Treasury release for Project #${projectId}: ${formatAmount(amount)}`,
+    timestamp,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+  });
+});
+
 async function handleERC20Transfer(
   event: {
     args: { from: `0x${string}`; to: `0x${string}`; value: bigint };
