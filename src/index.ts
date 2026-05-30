@@ -1,5 +1,6 @@
 import { ponder } from "ponder:registry";
 import { ProjectNFTAbi } from "../abis/ProjectNFTAbi";
+import { LendingPoolAbi } from "../abis/LendingPoolAbi";
 import {
   account,
   activityFeed,
@@ -47,7 +48,7 @@ function formatAmount(amount: bigint, decimals = 6): string {
 async function recordPortfolioSnapshot(
   context: { db: any },
   address: `0x${string}`,
-  accountData: { totalInvested: bigint; totalClaimed: bigint; investmentCount: number },
+  accountData: { totalInvested: bigint; totalClaimed: bigint; activeInvestmentCount: number },
   timestamp: number,
   blockNumber: bigint,
 ) {
@@ -62,7 +63,7 @@ async function recordPortfolioSnapshot(
       address,
       totalInvested: accountData.totalInvested,
       totalClaimed: accountData.totalClaimed,
-      activeInvestments: accountData.investmentCount,
+      activeInvestments: accountData.activeInvestmentCount,
       netValue,
       timestamp,
       blockNumber,
@@ -164,18 +165,50 @@ ponder.on(
   },
 );
 
+ponder.on(
+  "AccessRegistry:CollectorReputationUpdated",
+  async ({ event, context }) => {
+    const { db } = context;
+    const timestamp = Number(event.block.timestamp);
+    const { collector, totalProjects, completedProjects } = event.args;
+
+    const existing = await db.find(account, { address: collector });
+    if (existing) {
+      await db.update(account, { address: collector }).set({
+        projectCount: Number(totalProjects),
+        completedProjectCount: Number(completedProjects),
+        lastActiveAt: timestamp,
+      });
+    }
+  },
+);
+
 ponder.on("ProjectNFT:ProjectMinted", async ({ event, context }) => {
   const { db, client, contracts } = context;
   const timestamp = Number(event.block.timestamp);
   const { projectId, collector, acceptedToken, volumeKg, maxFunding } =
     event.args;
 
-  const projectData = await client.readContract({
-    abi: ProjectNFTAbi[0],
-    address: contracts.ProjectNFT.address,
-    functionName: "getProject",
-    args: [projectId],
-  });
+  const [projectData, profitPerKgInvestor, profitPerKgPlatform] = await Promise.all([
+    client.readContract({
+      abi: ProjectNFTAbi[0],
+      address: contracts.ProjectNFT.address,
+      functionName: "getProject",
+      args: [projectId],
+    }),
+    client.readContract({
+      abi: LendingPoolAbi[0],
+      address: contracts.LendingPool.address,
+      functionName: "PROFIT_PER_KG_INVESTOR",
+      args: [],
+    }),
+    client.readContract({
+      abi: LendingPoolAbi[0],
+      address: contracts.LendingPool.address,
+      functionName: "PROFIT_PER_KG_PLATFORM",
+      args: [],
+    }),
+  ]);
 
   await db.insert(project).values({
     id: projectId,
@@ -185,8 +218,8 @@ ponder.on("ProjectNFT:ProjectMinted", async ({ event, context }) => {
     volumeKg,
     collateralValue: projectData.collateralValue,
     maxFunding,
-    profitPerKgInvestor: 0n,
-    profitPerKgPlatform: 0n,
+    profitPerKgInvestor,
+    profitPerKgPlatform,
     fundingDeadline: projectData.fundingDeadline,
     repaymentDeadline: 0n,
     metadataURI: projectData.metadataURI,
@@ -248,15 +281,21 @@ ponder.on("ProjectNFT:ProjectVerified", async ({ event, context }) => {
 
   const existing = await db.find(project, { id: projectId });
   if (existing) {
+    const wasAlreadyOpen = existing.status === 1;
+
     await db
       .update(project, { id: projectId })
       .set({ collateralVerified: true, status: 1 });
 
-    const stats = await upsertPlatformStats(db, timestamp);
-    await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
-      activeProjects: (stats?.activeProjects ?? 0) + 1,
-      updatedAt: timestamp,
-    });
+    // Only increment if not already OPEN — prevents double-count when
+    // ProjectStatusUpdated(1) fires in the same tx as ProjectVerified
+    if (!wasAlreadyOpen) {
+      const stats = await upsertPlatformStats(db, timestamp);
+      await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
+        activeProjects: (stats?.activeProjects ?? 0) + 1,
+        updatedAt: timestamp,
+      });
+    }
   }
 });
 
@@ -268,15 +307,50 @@ ponder.on("ProjectNFT:ProjectStatusUpdated", async ({ event, context }) => {
   const existing = await db.find(project, { id: projectId });
   if (!existing) return;
 
+  const wasAlreadyOpen = existing.status === 1;
   await db.update(project, { id: projectId }).set({ status: newStatus });
 
-  if (newStatus === 1) {
+  // Only increment if transitioning INTO OPEN for the first time —
+  // prevents double-count when ProjectVerified has already set status=1
+  if (newStatus === 1 && !wasAlreadyOpen) {
     const stats = await upsertPlatformStats(db, timestamp);
     await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
       activeProjects: (stats?.activeProjects ?? 0) + 1,
       updatedAt: timestamp,
     });
   }
+});
+
+ponder.on("ProjectNFT:ProjectRejected", async ({ event, context }) => {
+  const { db } = context;
+  const timestamp = Number(event.block.timestamp);
+  const { projectId } = event.args;
+
+  const projectRecord = await db.find(project, { id: projectId });
+  if (!projectRecord) return;
+
+  // Mark rejected using virtual status 8 (not in Solidity enum, but tracks state)
+  await db.update(project, { id: projectId }).set({ status: 8 });
+
+  // Decrement activeProjects if project was OPEN at time of rejection
+  if (projectRecord.status === 1) {
+    const stats = await upsertPlatformStats(db, timestamp);
+    await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
+      activeProjects: Math.max(0, (stats?.activeProjects ?? 0) - 1),
+      updatedAt: timestamp,
+    });
+  }
+
+  await recordActivity(context, {
+    address: projectRecord.collector,
+    type: "project_rejected",
+    projectId,
+    description: `Project #${projectId} rejected`,
+    timestamp,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+  });
 });
 
 ponder.on("LendingPool:Invested", async ({ event, context }) => {
@@ -324,6 +398,9 @@ ponder.on("LendingPool:Invested", async ({ event, context }) => {
       role: investorAccount.role === "collector" ? "both" : "investor",
       totalInvested: investorAccount.totalInvested + amount,
       investmentCount: investorAccount.investmentCount + 1,
+      activeInvestmentCount: isTopUp
+        ? investorAccount.activeInvestmentCount
+        : investorAccount.activeInvestmentCount + 1,
       lastActiveAt: timestamp,
     });
   } else {
@@ -333,6 +410,7 @@ ponder.on("LendingPool:Invested", async ({ event, context }) => {
       totalInvested: amount,
       totalClaimed: 0n,
       investmentCount: 1,
+      activeInvestmentCount: 1,
       projectCount: 0,
       completedProjectCount: 0,
       isBlacklisted: false,
@@ -385,6 +463,12 @@ ponder.on("LendingPool:ProjectAutoFunded", async ({ event, context }) => {
     fundedAt: timestamp,
   });
 
+  const stats = await upsertPlatformStats(db, timestamp);
+  await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
+    activeProjects: Math.max(0, (stats?.activeProjects ?? 0) - 1),
+    updatedAt: timestamp,
+  });
+
   const projectRecord = await db.find(project, { id: projectId });
   if (projectRecord) {
     await recordActivity(context, {
@@ -403,11 +487,30 @@ ponder.on("LendingPool:ProjectAutoFunded", async ({ event, context }) => {
 
 ponder.on("LendingPool:ProjectManuallyClosed", async ({ event, context }) => {
   const { db } = context;
-  const { projectId, totalFunded } = event.args;
+  const timestamp = Number(event.block.timestamp);
+  const { projectId, collector, totalFunded } = event.args;
 
   await db.update(project, { id: projectId }).set({
     status: 3,
     totalFunded,
+  });
+
+  const stats = await upsertPlatformStats(db, timestamp);
+  await db.update(platformStats, { id: PLATFORM_STATS_ID }).set({
+    activeProjects: Math.max(0, (stats?.activeProjects ?? 0) - 1),
+    updatedAt: timestamp,
+  });
+
+  await recordActivity(context, {
+    address: collector,
+    type: "project_closed",
+    projectId,
+    amount: totalFunded,
+    description: `Project #${projectId} manually closed with ${formatAmount(totalFunded)} funded`,
+    timestamp,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
   });
 });
 
@@ -483,6 +586,21 @@ ponder.on("LendingPool:ProfitDistributed", async ({ event, context }) => {
     totalPlatformFees: (stats?.totalPlatformFees ?? 0n) + platformFee,
     updatedAt: timestamp,
   });
+
+  const projectRecord = await db.find(project, { id: projectId });
+  if (projectRecord) {
+    await recordActivity(context, {
+      address: projectRecord.collector,
+      type: "profit_distributed",
+      projectId,
+      amount: investorFunds,
+      description: `Profit distributed for Project #${projectId}: investors ${formatAmount(investorFunds)}, platform ${formatAmount(platformFee)}`,
+      timestamp,
+      blockNumber: event.block.number,
+      transactionHash: event.transaction.hash,
+      logIndex: event.log.logIndex,
+    });
+  }
 });
 
 ponder.on("LendingPool:InvestorFundsClaimed", async ({ event, context }) => {
@@ -500,6 +618,7 @@ ponder.on("LendingPool:InvestorFundsClaimed", async ({ event, context }) => {
   if (investorAccount) {
     await db.update(account, { address: investor }).set({
       totalClaimed: investorAccount.totalClaimed + amount,
+      activeInvestmentCount: Math.max(0, investorAccount.activeInvestmentCount - 1),
       lastActiveAt: timestamp,
     });
 

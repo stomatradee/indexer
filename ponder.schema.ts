@@ -60,6 +60,7 @@ export const account = onchainTable(
     totalInvested: t.bigint().notNull().default(0n),
     totalClaimed: t.bigint().notNull().default(0n),
     investmentCount: t.integer().notNull().default(0),
+    activeInvestmentCount: t.integer().notNull().default(0),
     projectCount: t.integer().notNull().default(0),
     completedProjectCount: t.integer().notNull().default(0),
     isBlacklisted: t.boolean().notNull().default(false),

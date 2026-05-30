@@ -28,6 +28,7 @@ const STATUS_LABELS: Record<number, string> = {
   5: "SETTLED",
   6: "DEFAULTED",
   7: "COMPLETED",
+  8: "REJECTED",
 };
 
 const COMMODITY_CATEGORY: Record<string, string> = {
@@ -84,17 +85,21 @@ function projectCalc(p: typeof project.$inferSelect) {
   const totalFundedUSD = toUSD(p.totalFunded);
   const pricePerKg =
     p.volumeKg > 0n
-      ? Math.round((toUSD(p.maxFunding) / Number(p.volumeKg)) * 100) / 100
+      ? Math.round((toUSD(p.maxFunding) / Number(p.volumeKg)) * 1000000) / 1000000
       : 0;
   const costPerKg =
     p.volumeKg > 0n ? Number(p.maxFunding) / Number(p.volumeKg) : 0;
   const returnRate =
     costPerKg > 0
+      ? Math.round((Number(p.profitPerKgInvestor) / costPerKg) * 100 * 10) / 10
+      : 0;
+  const estimatedReturnRate =
+    p.maxFunding > 0n
       ? Math.round(
-          (Number(p.profitPerKgInvestor) / costPerKg) * 100 * 10,
+          ((Number(p.collateralValue) - Number(p.maxFunding)) / Number(p.maxFunding)) * 100 * 10,
         ) / 10
       : 0;
-  return { fundingProgress, maxFundingUSD, totalFundedUSD, pricePerKg, returnRate };
+  return { fundingProgress, maxFundingUSD, totalFundedUSD, pricePerKg, returnRate, estimatedReturnRate };
 }
 
 function commodityCategory(type: string): string {
@@ -122,7 +127,9 @@ app.get("/api/projects/open", async (c) => {
   const raw = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
+    acceptedToken: p.acceptedToken,
     commodityType: p.commodityType,
+    volumeKg: p.volumeKg.toString(),
     metadataURI: p.metadataURI,
     maxFunding: p.maxFunding.toString(),
     totalFunded: p.totalFunded.toString(),
@@ -171,7 +178,9 @@ app.get("/api/projects/browse", async (c) => {
   const raw = rows.map((p: ProjectRow) => ({
     id: p.id.toString(),
     collector: p.collector,
+    acceptedToken: p.acceptedToken,
     commodityType: p.commodityType,
+    volumeKg: p.volumeKg.toString(),
     metadataURI: p.metadataURI,
     status: p.status,
     statusLabel: formatStatus(p.status),
@@ -201,6 +210,7 @@ app.get("/api/projects/:id/investors", async (c) => {
 
   const investors = rows.map((inv: InvestmentRow) => ({
     investor: inv.investor,
+    token: inv.token,
     amount: inv.amount.toString(),
     amountUSD: toUSD(inv.amount),
     claimed: inv.claimed,
@@ -269,16 +279,22 @@ app.get("/api/projects/:id", async (c) => {
 
   const calc = projectCalc(projectData);
 
-  const enrichedInvestments = investments.map((inv) => ({
-    investor: inv.investor,
-    amount: inv.amount.toString(),
-    amountUSD: toUSD(inv.amount),
-    claimed: inv.claimed,
-    claimedAmount: inv.claimedAmount.toString(),
-    claimedAmountUSD: toUSD(inv.claimedAmount),
-    timestamp: inv.timestamp,
-    sharePercent: calcPercentage(inv.amount, projectData.totalFunded),
-  }));
+  const enrichedInvestments = investments.map((inv) => {
+    const amountUSD = toUSD(inv.amount);
+    const estimatedReturnUSD = Math.round(amountUSD * (calc.estimatedReturnRate / 100) * 1000000) / 1000000;
+    return {
+      investor: inv.investor,
+      amount: inv.amount.toString(),
+      amountUSD,
+      claimed: inv.claimed,
+      claimedAmount: inv.claimedAmount.toString(),
+      claimedAmountUSD: toUSD(inv.claimedAmount),
+      timestamp: inv.timestamp,
+      sharePercent: calcPercentage(inv.amount, projectData.totalFunded),
+      estimatedReturnUSD,
+      estimatedTotalUSD: Math.round((amountUSD + estimatedReturnUSD) * 1000000) / 1000000,
+    };
+  });
 
   const col = collectorData[0];
 
@@ -319,6 +335,8 @@ app.get("/api/projects/:id", async (c) => {
       ? {
           address: col.address,
           role: col.role,
+          profileName: col.profileName ?? null,
+          profileLocation: col.profileLocation ?? null,
           projectCount: col.projectCount,
           completedProjectCount: col.completedProjectCount,
           isBlacklisted: col.isBlacklisted,
@@ -697,6 +715,8 @@ app.get("/api/collector/:address", async (c) => {
     collector: {
       address: accountData.address,
       role: accountData.role,
+      profileName: accountData.profileName ?? null,
+      profileLocation: accountData.profileLocation ?? null,
       profileURI: accountData.profileURI ?? null,
       profileMetadata: accountData.profileURI ? await fetchMetadata(accountData.profileURI) : null,
       projectCount: accountData.projectCount,
